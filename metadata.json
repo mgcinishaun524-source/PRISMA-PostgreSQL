@@ -1,0 +1,6 @@
+{
+  "name": "Prisma PostgreSQL Database Layer",
+  "description": "Prisma ORM setup and PostgreSQL database configuration for the application backend.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
