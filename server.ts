@@ -117,25 +117,33 @@ app.get("/api/db/status", async (_req, res) => {
 // Get all users
 app.get("/api/users", async (_req, res) => {
   try {
-    const users = await prisma.user.findMany({
+    const client = getPrisma();
+    if (!client) {
+      return res.status(503).json({ error: "Database client is initializing. Please retry in a few seconds." });
+    }
+    const users = await client.user.findMany({
       include: { profile: true, posts: true },
       orderBy: { createdAt: "desc" },
     });
     res.json({ users });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Failed to retrieve users" });
   }
 });
 
 // Create a new user
 app.post("/api/users", async (req, res) => {
   try {
+    const client = getPrisma();
+    if (!client) {
+      return res.status(503).json({ error: "Database client is initializing. Please retry in a few seconds." });
+    }
     const { name, email, role, bio } = req.body;
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
 
-    const newUser = await prisma.user.create({
+    const newUser = await client.user.create({
       data: {
         email,
         name: name || null,
@@ -147,17 +155,21 @@ app.post("/api/users", async (req, res) => {
 
     res.status(201).json({ user: newUser });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Failed to create user" });
   }
 });
 
 // Seed sample data
 app.post("/api/seed", async (_req, res) => {
   try {
+    const client = getPrisma();
+    if (!client) {
+      return res.status(503).json({ error: "Database client is initializing. Please retry in a few seconds." });
+    }
     const timestamp = Date.now().toString().slice(-4);
     const demoEmail = `dev_${timestamp}@example.com`;
 
-    const user = await prisma.user.create({
+    const user = await client.user.create({
       data: {
         email: demoEmail,
         name: `Developer ${timestamp}`,
@@ -184,7 +196,7 @@ app.post("/api/seed", async (_req, res) => {
 
     res.json({ success: true, message: "Sample record created in Supabase!", user });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Failed to seed sample record" });
   }
 });
 

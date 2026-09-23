@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { 
   Database, 
   CheckCircle2, 
@@ -59,18 +59,30 @@ export default function App() {
   const [newRole, setNewRole] = useState("USER");
   const [formMsg, setFormMsg] = useState<string | null>(null);
 
-  const fetchStatus = async () => {
+  const [retrying, setRetrying] = useState(false);
+  const retryCountRef = useRef(0);
+
+  const fetchStatus = async (isManual = false) => {
+    if (isManual) {
+      retryCountRef.current = 0;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/db/status");
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        throw new Error("Backend server is starting up or reloading. Please wait a moment and click Refresh.");
+        throw new Error("Backend server is warming up. Retrying...");
       }
       const data = await res.json();
       setStatus(data);
+      retryCountRef.current = 0;
+      setRetrying(false);
     } catch (err: any) {
       const isSyntaxErr = err?.name === "SyntaxError" || err?.message?.includes("JSON");
+      const errMsg = isSyntaxErr
+        ? "Backend service warming up. Retrying automatically..."
+        : (err.message || "Failed to reach backend server");
+
       setStatus({
         connected: false,
         provider: "Supabase PostgreSQL",
@@ -78,10 +90,19 @@ export default function App() {
         port: 6543,
         mode: "Transaction Pooler",
         latencyMs: 0,
-        error: isSyntaxErr
-          ? "Backend service warming up. Click Refresh in a few seconds."
-          : (err.message || "Failed to reach backend server"),
+        error: errMsg,
       });
+
+      // Auto-retry up to 4 times with short intervals if server was warming up
+      if (retryCountRef.current < 4) {
+        retryCountRef.current += 1;
+        setRetrying(true);
+        setTimeout(() => {
+          fetchStatus();
+        }, 2000);
+      } else {
+        setRetrying(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -168,12 +189,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               id="refresh-btn"
-              onClick={fetchStatus}
+              onClick={() => fetchStatus(true)}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/60 transition active:scale-95 disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-emerald-400" : ""}`} />
-              Refresh
+              <RefreshCw className={`w-3.5 h-3.5 ${loading || retrying ? "animate-spin text-emerald-400" : ""}`} />
+              {loading || retrying ? "Connecting..." : "Refresh"}
             </button>
             <button
               id="quick-seed-btn"
@@ -215,11 +236,22 @@ export default function App() {
                 <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   {status?.connected ? "Database Online & Healthy" : "Connection Issue"}
                 </h2>
-                <p className="text-xs text-slate-400">
-                  {status?.connected
-                    ? "Prisma client successfully communicating with Supabase PostgreSQL cluster"
-                    : status?.error || "Unable to reach database"}
-                </p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <p className="text-xs text-slate-400">
+                    {status?.connected
+                      ? "Prisma client successfully communicating with Supabase PostgreSQL cluster"
+                      : status?.error || "Unable to reach database"}
+                  </p>
+                  {!status?.connected && (
+                    <button
+                      onClick={() => fetchStatus(true)}
+                      className="text-xs text-emerald-400 underline hover:text-emerald-300 font-medium inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loading || retrying ? "animate-spin" : ""}`} />
+                      {retrying ? "Retrying..." : "Retry Now"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
