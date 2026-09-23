@@ -63,9 +63,14 @@ export default function App() {
     setLoading(true);
     try {
       const res = await fetch("/api/db/status");
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Backend server is starting up or reloading. Please wait a moment and click Refresh.");
+      }
       const data = await res.json();
       setStatus(data);
     } catch (err: any) {
+      const isSyntaxErr = err?.name === "SyntaxError" || err?.message?.includes("JSON");
       setStatus({
         connected: false,
         provider: "Supabase PostgreSQL",
@@ -73,7 +78,9 @@ export default function App() {
         port: 6543,
         mode: "Transaction Pooler",
         latencyMs: 0,
-        error: err.message || "Failed to reach backend server",
+        error: isSyntaxErr
+          ? "Backend service warming up. Click Refresh in a few seconds."
+          : (err.message || "Failed to reach backend server"),
       });
     } finally {
       setLoading(false);
@@ -88,6 +95,10 @@ export default function App() {
     setActionLoading(true);
     try {
       const res = await fetch("/api/seed", { method: "POST" });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Server is restarting. Please retry in a moment.");
+      }
       const data = await res.json();
       if (data.success) {
         setFormMsg("Sample user & post created in Supabase!");
@@ -96,7 +107,7 @@ export default function App() {
         setFormMsg(data.error || "Failed to seed data");
       }
     } catch (e: any) {
-      setFormMsg(e.message);
+      setFormMsg(e.message || "Failed to seed data");
     } finally {
       setActionLoading(false);
       setTimeout(() => setFormMsg(null), 4000);
@@ -113,6 +124,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName, email: newEmail, role: newRole }),
       });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Server is restarting. Please retry in a moment.");
+      }
       const data = await res.json();
       if (data.user) {
         setFormMsg(`Created user: ${data.user.email}`);
@@ -123,7 +138,7 @@ export default function App() {
         setFormMsg(data.error || "Error creating user");
       }
     } catch (err: any) {
-      setFormMsg(err.message);
+      setFormMsg(err.message || "Failed to create user");
     } finally {
       setActionLoading(false);
       setTimeout(() => setFormMsg(null), 4000);

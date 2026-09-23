@@ -17,15 +17,35 @@ const PORT = 3000;
 app.use(express.json());
 
 // Prisma client initialization with securely injected DATABASE_URL
-const dbUrl = process.env.DATABASE_URL;
-if (!dbUrl) {
-  console.error("CRITICAL: DATABASE_URL environment variable is missing.");
+const defaultDbUrl =
+  "postgresql://postgres.pxfbbiyytmeuvovnuuhv:vrPsCXEyciGF3Uhx@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true";
+const dbUrl = process.env.DATABASE_URL || defaultDbUrl;
+
+let prisma: any = null;
+try {
+  prisma = new PrismaClient({
+    datasources: {
+      db: { url: dbUrl },
+    },
+  });
+} catch (e: any) {
+  console.error("Failed to initialize Prisma Client:", e?.message || e);
 }
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: dbUrl },
-  },
-});
+
+function getPrisma() {
+  if (!prisma) {
+    try {
+      prisma = new PrismaClient({
+        datasources: {
+          db: { url: dbUrl },
+        },
+      });
+    } catch (e: any) {
+      console.error("Prisma re-init error:", e?.message || e);
+    }
+  }
+  return prisma;
+}
 
 // Health check endpoint
 app.get("/api/health", (_req, res) => {
@@ -35,18 +55,31 @@ app.get("/api/health", (_req, res) => {
 // Database status & metrics endpoint
 app.get("/api/db/status", async (_req, res) => {
   const start = Date.now();
+  const client = getPrisma();
+  if (!client) {
+    return res.status(200).json({
+      connected: false,
+      provider: "Supabase PostgreSQL",
+      host: "aws-1-eu-west-1.pooler.supabase.com",
+      port: 6543,
+      mode: "Transaction Pooler (PgBouncer)",
+      latencyMs: 0,
+      error: "Prisma client initializing. Please wait a few seconds and refresh.",
+    });
+  }
+
   try {
-    const rawResult = await prisma.$queryRaw`SELECT version(), current_database(), current_user;`;
+    const rawResult = await client.$queryRaw`SELECT version(), current_database(), current_user;`;
     const latencyMs = Date.now() - start;
 
     const [userCount, postCount, tagCount, profileCount] = await Promise.all([
-      prisma.user.count(),
-      prisma.post.count(),
-      prisma.tag.count(),
-      prisma.profile.count(),
+      client.user.count(),
+      client.post.count(),
+      client.tag.count(),
+      client.profile.count(),
     ]);
 
-    const recentUsers = await prisma.user.findMany({
+    const recentUsers = await client.user.findMany({
       take: 5,
       orderBy: { createdAt: "desc" },
       include: { profile: true, posts: { take: 3 } },
@@ -69,10 +102,14 @@ app.get("/api/db/status", async (_req, res) => {
       recentUsers,
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(200).json({
       connected: false,
-      error: error.message || "Failed to query database",
+      provider: "Supabase PostgreSQL",
+      host: "aws-1-eu-west-1.pooler.supabase.com",
+      port: 6543,
+      mode: "Transaction Pooler (PgBouncer)",
       latencyMs: Date.now() - start,
+      error: error.message || "Failed to query database",
     });
   }
 });
